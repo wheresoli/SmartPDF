@@ -1,0 +1,42 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE/editor
+.vscode/
+*.code-workspace
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs/temp
+*.log
+*.tmp
+
+# App-specific
+uploads/*
+!uploads/.gitkeep
+static/lib/
+
+# Node (if any future scripts)
+node_modules/
+
+# Images/renders
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# PDF test artifacts
+*.pdf
+
+# Pip
+pip-wheel-metadata/
