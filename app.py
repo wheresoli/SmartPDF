@@ -130,9 +130,20 @@ def detect_interactables():
 		detected: List[Dict[str, Any]] = []
 		for cls in INTERACTABLE_TYPES:
 			try:
-				ia = cls.detect(img)
-				ia.page = index
-				detected.append(ia.to_dict())
+				if hasattr(cls, 'detect_all'):
+					items = cls.detect_all(img) or []
+					for ia in items:
+						try:
+							ia.page = index
+							detected.append(ia.to_dict())
+						except Exception:
+							# Ensure one bad item doesn't break others
+							pass
+				else:
+					ia = cls.detect(img)
+					if ia is not None:
+						ia.page = index
+						detected.append(ia.to_dict())
 			except Exception as e:
 				app.logger.warning("Detector %s failed: %s", getattr(cls, "__name__", "unknown"), e)
 				detected.append({

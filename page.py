@@ -1,21 +1,25 @@
 from  __future__ import annotations
-from typing import Optional, Sequence
+from typing import Optional, Sequence, List
 import io
 import numpy as np
 import pypdfium2 as pdfium
-from interactables import Interactable
+from interactables import INTERACTABLE_TYPES, Interactable
 from pypdf import PageObject, PdfWriter, PdfReader
 from PIL import Image
 import img2pdf
-from interactables import INTERACTABLE_TYPES
+from interactables import Shape, Text, Checkbox, Bubble
 
 class Page:
     """Wrapper over pypdf's PageObject with interactable support."""
-    def __init__(self, page: PageObject, interactables: Optional[list[Interactable]] = None):
-        self.page: PageObject = page
-        self.interactables: list[Interactable] = interactables or []
+    def __init__(self, page: PageObject | np.ndarray, interactables: Optional[List[Interactable]] = None):
+        self.page: PageObject | np.ndarray = page
+        self.interactables: List[Interactable] = interactables or []
     
-    def raycast(self, target: Sequence[int], **kwargs) -> Interactable | None:
+    @property
+    def is_flattened(self) -> bool:
+        return isinstance(self.page, np.ndarray)
+
+    def raycast(self, target: Sequence[int]) -> Interactable | None:
         """Return the Interactable at the given (x, y) coordinates.
 
         Expects `target` as a length-2 (x, y) in pixel coordinates.
@@ -30,10 +34,19 @@ class Page:
             return None
         # Later-added interactables considered top-most; iterate in reverse
         for ia in reversed(self.interactables):
+            if ia is None:
+                continue
             bx, by, bw, bh = ia.bbox
             if (bx <= x < bx + bw) and (by <= y < by + bh):
                 return ia
         return None
+
+    @classmethod
+    def detect_interactables(cls, img: np.ndarray) -> List[Interactable]:
+        detected: List[Interactable] = []
+        for interactable_type in INTERACTABLE_TYPES:
+            detected.extend(interactable_type.detect(img))
+        return detected
 
     def flatten(self, dpi: int = 150) -> np.ndarray:
         """Rasterize the page into an image array (H x W x 3 uint8).
@@ -85,23 +98,19 @@ class Page:
         else:
             raise ValueError("Unsupported image shape for PDF conversion")
 
+        # Detect interactables directly on the provided image array
+        arr = image if image.ndim != 3 or image.shape[2] != 4 else image[:, :, :3]
+        interactables: List[Interactable] = cls.detect_interactables(arr)
+
         bio = io.BytesIO()
         pil.save(bio, format="PNG")
         bio.seek(0)
+
         pdf_bytes = img2pdf.convert([bio.getvalue()])
         reader = PdfReader(io.BytesIO(pdf_bytes))
         page_obj = reader.pages[0]
 
-        # Run detectors on the provided image
-        detected: list[Interactable] = []
-        for interactable_type in INTERACTABLE_TYPES:
-            try:
-                ia = interactable_type.detect(image)
-                detected.append(ia)
-            except Exception:
-                # Skip detectors that fail; they are reported elsewhere when needed
-                continue
-        return cls(page=page_obj, interactables=detected)
+        return cls(page=page_obj, interactables=interactables)
 
     @classmethod
     def from_pdf(cls, page: PageObject, dpi: int = 150) -> Page:
@@ -122,26 +131,44 @@ class Page:
             arr = arr[:, :, :3]
         p.close(); doc.close()
 
-        detected: list[Interactable] = []
+        detected: List[Interactable] = []
         for interactable_type in INTERACTABLE_TYPES:
             try:
-                ia = interactable_type.detect(arr)
-                detected.append(ia)
+                if hasattr(interactable_type, 'detect_all'):
+                    items = interactable_type.detect_all(arr)
+                    for ia in items or []:
+                        if ia is not None:
+                            detected.append(ia)
+                else:
+                    ia = interactable_type.detect(arr)
+                    if ia is not None:
+                        detected.append(ia)
             except Exception:
                 continue
         return cls(page=page, interactables=detected)
 
+    # Page does not have a bbox; cropping should be done on Interactable instances.
 
 class Document(Page):
     """Wrapper over pypdf reader/writer with Page wrappers."""
     def __init__(self, pdf: PdfReader | PdfWriter):
         self._pdf: PdfReader | PdfWriter = pdf
+        self.is_flattened: bool = False
         self.pages: list[Page] = []
         self.index: int = 0
 
     @property
+
+
+    @property
     def page(self) -> Page:
         return self.pages[self.index]
+
+    def raycast(self, target: Sequence[int], **kwargs) -> Interactable | None:
+        """Return the Interactable at the given (x, y) coordinates."""
+        if not self.pages:
+            self.wrap_pages()
+        return self.page.raycast(target, **kwargs)
 
     def wrap_pages(self):
         # For PdfReader: `.pages` is a list of PageObject
@@ -172,7 +199,6 @@ class Document(Page):
 
     def flatten(self, dpi: int = 150) -> list[np.ndarray]:
         """Rasterize all pages into image arrays.
-
         Returns a list of NumPy arrays (H x W x 3 uint8) for each page.
         """
         if not self.pages:
@@ -210,7 +236,4 @@ class Document(Page):
         doc = cls(reader)
         doc.wrap_pages()
         return doc
-
-    def raycast(self, target: Sequence[int]) -> Interactable | None:
-        """Return the Interactable at the given (x, y) coordinates."""
-        super(Document, self).raycast(self.page, target)
+    
