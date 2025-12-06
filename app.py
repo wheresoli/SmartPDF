@@ -203,6 +203,9 @@ def raycast():
 	x = request.args.get("x", type=int)
 	y = request.args.get("y", type=int)
 	dpi = request.args.get("dpi", default=150, type=int)
+	passthru = request.args.get("passthru", default="false")
+	passthru = str(passthru).lower() in ("1", "true", "yes")
+	z = request.args.get("z", type=int)
 	if not pdf_name or index is None or x is None or y is None:
 		return jsonify({"error": "Missing pdf, index, or coordinates"}), 400
 	path = os.path.join(app.config["UPLOAD_FOLDER"], pdf_name)
@@ -214,11 +217,23 @@ def raycast():
 			return jsonify({"error": "Page index out of range"}), 400
 		page_obj = reader.pages[index]
 		page = Page.from_pdf(page_obj, dpi=dpi)
-		hit = page.raycast((x, y))
-		if hit is None:
+		# Perform hit-test with passthru/z support
+		result = page.raycast((x, y), passthru=passthru, z=z)
+		if result is None:
 			return jsonify({"pdf": pdf_name, "page": index, "hit": None})
-		hit.page = index
-		return jsonify({"pdf": pdf_name, "page": index, "hit": hit.to_dict()})
+		if isinstance(result, list):
+			# Return list of interactables
+			out = []
+			for ia in result:
+				try:
+					ia.page = index
+					out.append(ia.to_dict())
+				except Exception:
+					continue
+			return jsonify({"pdf": pdf_name, "page": index, "hits": out})
+		else:
+			result.page = index
+			return jsonify({"pdf": pdf_name, "page": index, "hit": result.to_dict()})
 	except Exception as e:
 		app.logger.exception("Raycast failed: %s", e)
 		return jsonify({"error": f"Raycast failed: {e}"}), 500

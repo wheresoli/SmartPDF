@@ -7,7 +7,7 @@ from interactables import INTERACTABLE_TYPES, Interactable
 from pypdf import PageObject, PdfWriter, PdfReader
 from PIL import Image
 import img2pdf
-from interactables import Shape, Text, Checkbox, Bubble
+from interactables import Shape, Text, Checkbox, Bubble, Z
 
 class Page:
     """Wrapper over pypdf's PageObject with interactable support."""
@@ -19,27 +19,48 @@ class Page:
     def is_flattened(self) -> bool:
         return isinstance(self.page, np.ndarray)
 
-    def raycast(self, target: Sequence[int]) -> Interactable | None:
-        """Return the Interactable at the given (x, y) coordinates.
+    def raycast(self, target: Sequence[int], passthru: bool = False, z: int | str | None = None) -> List[Interactable] | Interactable | None:
+        """Hit-test interactables at pixel coordinates.
 
-        Expects `target` as a length-2 (x, y) in pixel coordinates.
-        Returns the top-most interactable whose bbox contains the point, or None.
+        - `target`: (x, y) point in page pixel coords
+        - `passthru`: when True, returns a list of all interactables whose bbox contains the point
+        - `z`: optional layer filter; only consider interactables with matching `Interactable.z`
+
+        Returns either the top-most interactable (highest z, latest addition) or a list of all hits.
         """
         if target is None:
             return None
-        # Accept any array-like and coerce to integers
         try:
             x, y = int(target[0]), int(target[1])
         except Exception:
             return None
-        # Later-added interactables considered top-most; iterate in reverse
-        for ia in reversed(self.interactables):
+
+        hits: List[Interactable] = []
+        for ia in self.interactables:
             if ia is None:
+                continue
+            if z is not None and getattr(ia, 'z', None) != z:
                 continue
             bx, by, bw, bh = ia.bbox
             if (bx <= x < bx + bw) and (by <= y < by + bh):
-                return ia
-        return None
+                hits.append(ia)
+
+        if passthru:
+            return hits
+
+        if not hits:
+            return None
+        # Choose the top-most: highest z wins; if equal, prefer later-added
+        # Since self.interactables preserves insertion order, iterate reversed for tiebreaker
+        best: Interactable | None = None
+        best_z = -10**9
+        for ia in reversed(self.interactables):
+            if ia in hits:
+                curr_z = getattr(ia, 'z', 0) if getattr(ia, 'z', None) is not None else 0
+                if curr_z >= best_z:
+                    best_z = curr_z
+                    best = ia
+        return best
 
     @classmethod
     def detect_interactables(cls, img: np.ndarray) -> List[Interactable]:
@@ -164,11 +185,11 @@ class Document(Page):
     def page(self) -> Page:
         return self.pages[self.index]
 
-    def raycast(self, target: Sequence[int], **kwargs) -> Interactable | None:
-        """Return the Interactable at the given (x, y) coordinates."""
+    def raycast(self, target: Sequence[int], passthru: bool = False, z: int | None = None) -> Interactable | List[Interactable] | None:
+        """Return interactables at the given (x, y) coordinates, with passthru and z filtering."""
         if not self.pages:
             self.wrap_pages()
-        return self.page.raycast(target, **kwargs)
+        return self.page.raycast(target, passthru=passthru, z=z)
 
     def wrap_pages(self):
         # For PdfReader: `.pages` is a list of PageObject

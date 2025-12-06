@@ -5,14 +5,23 @@ import numpy as np
 import uuid
 import cv2
 
-class Alignment:
+class Z:
+    TOP = "top"
+    BOTTOM = "bottom"
+
+class Alignment(Z):
     LEFT = "left"
     CENTER = "center"
     RIGHT = "right"
-    TOP = "top"
     MIDDLE = "middle"
-    BOTTOM = "bottom"
+
 ALIGNMENT: list[str] = [Alignment.LEFT, Alignment.CENTER, Alignment.RIGHT, Alignment.TOP, Alignment.MIDDLE, Alignment.BOTTOM]
+CIRCLE: str = "circle"
+SQUARE: str = "square"
+RECTANGLE: str = "rectangle"
+ROUNDED_RECTANGLE: str = "rounded-rectangle"
+POLYGON: str = "polygon"
+LINE: str = "line"
 
 @dataclass
 class Interactable:
@@ -115,13 +124,6 @@ class Shape(Interactable):
         init=False, default="shape"
     )  # subclass of Highlight with distinct intention
 
-    CIRCLE: str = "circle"
-    SQUARE: str = "square"
-    RECTANGLE: str = "rectangle"
-    ROUNDED_RECTANGLE: str = "rounded-rectangle"
-    POLYGON: str = "polygon"
-    LINE: str = "line"
-
     @property
     def shape_type(self) -> str:
         return self.meta.get("shape_type", "unknown")
@@ -166,12 +168,12 @@ class Shape(Interactable):
 
         # Pick classification with highest score
         scores = [
-            (cls.CIRCLE, circle_score),
-            (cls.SQUARE, rect_score if 0.85 < aspect < 1.15 else 0.0),
-            (cls.RECTANGLE, rect_score),
-            (cls.ROUNDED_RECTANGLE, rounded_rect_score),
-            (cls.POLYGON, poly_score),
-            (cls.LINE, line_score),
+            (CIRCLE, circle_score),
+            (SQUARE, rect_score if 0.85 < aspect < 1.15 else 0.0),
+            (RECTANGLE, rect_score),
+            (ROUNDED_RECTANGLE, rounded_rect_score),
+            (POLYGON, poly_score),
+            (LINE, line_score),
         ]
         cls_name, score = max(scores, key=lambda t: t[1])
         return (cls_name, score)
