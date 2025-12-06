@@ -14,12 +14,36 @@ class Interactable:
     bbox: Tuple[int, int, int, int]  # x, y, w, h in pixel coords
     meta: Dict[str, Any]
 
-    def __init__(self, coords: Tuple[int, int, int, int], **kwargs):
-        super().__init__(**kwargs)
-        self.bbox = coords  # x, y, w, h in pixel coords
+    # Use dataclass-generated __init__; bbox should be passed directly
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        def _json_safe(v):
+            try:
+                import numpy as _np
+            except Exception:
+                _np = None
+            # Convert numpy scalars and dtypes to native Python types
+            if _np is not None:
+                if isinstance(v, (_np.integer,)):
+                    return int(v)
+                if isinstance(v, (_np.floating,)):
+                    return float(v)
+                if isinstance(v, (_np.bool_,)):
+                    return bool(v)
+                if isinstance(v, _np.ndarray):
+                    return v.tolist()
+            if isinstance(v, (list, tuple)):
+                return type(v)([_json_safe(x) for x in v])
+            if isinstance(v, dict):
+                return {str(k): _json_safe(val) for k, val in v.items()}
+            return v
+
+        d = asdict(self)
+        # Ensure bbox and meta are JSON-safe
+        d["bbox"] = _json_safe(d.get("bbox"))
+        d["meta"] = _json_safe(d.get("meta"))
+        d["page"] = int(d.get("page", 0))
+        return d
 
     def on_click(self) -> Dict[str, Any]:
         return {"id": self.id, "kind": self.kind, "meta": self.meta}
@@ -43,7 +67,7 @@ class Interactable:
             id=str(uuid.uuid4()),
             kind="generic",
             page=0,
-            coords=(x, y, w, h),
+            bbox=(x, y, w, h),
             meta={}
         )
 
@@ -140,7 +164,7 @@ class Shape(Interactable):
         return cls(
             id=str(uuid.uuid4()),
             page=0,
-            coords=(x, y, w, h),
+            bbox=(x, y, w, h),
             meta=best_meta
         )
     
@@ -183,7 +207,10 @@ class Text(Interactable):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img.copy()
         gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
         gray = cv2.bilateralFilter(gray, 7, 75, 75)
-        mser = cv2.MSER_create(_delta=5, _min_area=100, _max_area=8000)
+        mser = cv2.MSER_create()
+        mser.setDelta(5)
+        mser.setMinArea(100)
+        mser.setMaxArea(8000)
         regions, _ = mser.detectRegions(gray)
         mask = np.zeros_like(gray)
         for p in regions:
@@ -202,7 +229,7 @@ class Text(Interactable):
                 return cls(
                     id=str(uuid.uuid4()),
                     page=0,
-                    coords=(x, y, w, h),
+                    bbox=(x, y, w, h),
                     meta={"selected": False, "highlighted": False}
                 )
         # fallback to largest
@@ -210,7 +237,7 @@ class Text(Interactable):
         return cls(
             id=str(uuid.uuid4()),
             page=0,
-            coords=(x, y, w, h),
+            bbox=(x, y, w, h),
             meta={"selected": False, "highlighted": False}
         )
 
@@ -240,25 +267,29 @@ class Checkbox(Interactable):
 
     @classmethod
     def detect(cls, img: np.ndarray) -> Checkbox:
-        # Detect square checkboxes under heavy compression/noise
+        # Detect square checkboxes with more tolerant preprocessing
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img.copy()
+        gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
         gray = cv2.bilateralFilter(gray, 7, 75, 75)
-        thr = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                    cv2.THRESH_BINARY, 31, 2)
-        edges = cv2.Canny(thr, 60, 180)
-        edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), 1)
+        # Invert to make dark borders foreground under adaptive threshold
+        thr = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                    cv2.THRESH_BINARY_INV, 31, 7)
+        # Strengthen edges and close small gaps
+        edges = cv2.Canny(thr, 40, 140)
+        edges = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), 2)
+        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), iterations=1)
         cnts, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         best = None
         best_score = -1.0
         for c in cnts:
             area = cv2.contourArea(c)
-            if area < 60:
+            if area < 40:
                 continue
             x, y, w, h = cv2.boundingRect(c)
             aspect = w / (h + 1e-6)
-            if 0.75 < aspect < 1.25:
+            if 0.7 < aspect < 1.3:
                 peri = cv2.arcLength(c, True)
-                approx = cv2.approxPolyDP(c, 0.03 * peri, True)
+                approx = cv2.approxPolyDP(c, 0.04 * peri, True)
                 if len(approx) in (4, 5):
                     # Prefer sharper borders and small size typical of checkboxes
                     border_roi = gray[max(0, y-2):min(gray.shape[0], y+h+2), max(0, x-2):min(gray.shape[1], x+w+2)]
@@ -285,7 +316,7 @@ class Checkbox(Interactable):
         return cls(
             id=str(uuid.uuid4()),
             page=0,
-            coords=(x, y, w, h),
+            bbox=(x, y, w, h),
             meta={"checked": checked}
         )
 
@@ -309,34 +340,57 @@ class Bubble(Toggleable):
                                    param1=120, param2=25, minRadius=6, maxRadius=100)
         if circles is None:
             raise ValueError("No bubble-like circle detected")
-        circles = np.uint16(np.around(circles))[0]
+        circles = np.around(circles).astype(int)[0]
         # Pick the most prominent circle by edge density
         best = None
         best_score = -1.0
         for x, y, r in circles:
+            x = int(x); y = int(y); r = int(max(0, r))
+            if r <= 0:
+                continue
+            # Clamp radius so circle fits entirely within image bounds
+            max_r = min(x, y, gray.shape[1] - x - 1, gray.shape[0] - y - 1)
+            if max_r <= 0:
+                continue
+            r = int(min(r, max_r))
+            if r <= 0:
+                continue
             x0 = max(0, x - r); y0 = max(0, y - r)
             x1 = min(gray.shape[1], x + r); y1 = min(gray.shape[0], y + r)
+            if x1 <= x0 or y1 <= y0:
+                continue
             roi = edges[y0:y1, x0:x1]
-            score = roi.mean()
+            if roi.size == 0:
+                continue
+            # Use float dtype to avoid integer overflow in reductions
+            score = float(roi.astype(np.float32).mean())
             if score > best_score:
                 best_score = score
                 best = (x, y, r)
+        if best is None:
+            raise ValueError("No suitable bubble circle ROI")
         bx, by, r = best
         # Determine selected by inner dark region ratio
-        pad = int(r * 0.5)
-        xi, yi = bx - pad, by - pad
-        wi, hi = pad * 2, pad * 2
+        pad = max(1, int(r * 0.5))
+        xi, yi = int(bx - pad), int(by - pad)
+        wi, hi = int(pad * 2), int(pad * 2)
         xi = max(0, xi); yi = max(0, yi)
-        wi = min(gray.shape[1] - xi, wi); hi = min(gray.shape[0] - yi, hi)
+        wi = max(1, min(gray.shape[1] - xi, wi)); hi = max(1, min(gray.shape[0] - yi, hi))
         inner = gray[yi:yi + hi, xi:xi + wi]
+        if inner.size == 0:
+            raise ValueError("Inner bubble region is empty")
+        # Otsu threshold; if variance is low, guard against degenerate results
         _, inner_bin = cv2.threshold(inner, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        fill_ratio = (inner_bin == 0).sum() / (inner_bin.size + 1e-6)
+        total = float(inner_bin.size)
+        if total <= 0:
+            raise ValueError("Inner bubble region size invalid")
+        fill_ratio = (inner_bin == 0).sum() / (total + 1e-6)
         checked = fill_ratio > 0.20
         return cls(
             id=str(uuid.uuid4()),
             page=0,
-            coords=(bx - r, by - r, r * 2, r * 2),
+            bbox=(bx - r, by - r, r * 2, r * 2),
             meta={"checked": checked}
         )
 
-INTERACTABLES = [Text, Shape, Checkbox, Bubble]
+INTERACTABLE_TYPES = [Text, Shape, Checkbox, Bubble]

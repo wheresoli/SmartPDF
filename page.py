@@ -2,11 +2,12 @@ from  __future__ import annotations
 from typing import Optional, Sequence
 import io
 import numpy as np
-from pdf2image import convert_from_bytes
+import pypdfium2 as pdfium
 from interactables import Interactable
 from pypdf import PageObject, PdfWriter, PdfReader
 from PIL import Image
 import img2pdf
+from interactables import INTERACTABLE_TYPES
 
 class Page:
     """Wrapper over pypdf's PageObject with interactable support."""
@@ -39,31 +40,96 @@ class Page:
 
         Implementation details:
         - Uses `pypdf.PdfWriter` to serialize this page into a single-page PDF.
-        - Renders via `pdf2image.convert_from_bytes` at the requested DPI.
+        - Renders via `pypdfium2` at the requested DPI.
         - Returns a NumPy array in RGB order.
 
-        Requirements: `pdf2image` and system Poppler (Windows needs poppler bin).
+        Requirements: pypdfium2 wheels (no external binaries required).
         """
         writer = PdfWriter()
         writer.add_page(self.page)
         buf = io.BytesIO()
         writer.write(buf)
         buf.seek(0)
-        images = convert_from_bytes(buf.getvalue(), dpi=dpi, fmt="png")
-        if not images:
-            raise RuntimeError("Rasterization failed: no image returned")
-        img = images[0]
-        return np.array(img)
+        pdf_bytes = buf.getvalue()
+        doc = pdfium.PdfDocument(pdf_bytes)
+        page = doc.get_page(0)
+        # Scale relative to 72 DPI base
+        scale = dpi / 72.0
+        bitmap = page.render(scale=scale, rotation=0)
+        pil_image = bitmap.to_pil()
+        arr = np.array(pil_image)
+        # Ensure RGB (drop alpha if present)
+        if arr.ndim == 3 and arr.shape[2] == 4:
+            arr = arr[:, :, :3]
+        page.close()
+        doc.close()
+        return arr
     
     @classmethod
-    def unflatten(cls) -> Page:
-        """Construct a Page object from a rasterized image array (a flattened PDF)."""
-        raise NotImplementedError
+    def unflatten(cls, image: np.ndarray, dpi: int = 150) -> Page:
+        """Construct a Page object from a rasterized image array and detect interactables.
+
+        Creates a single-page PDF from the image for consistency, and runs detectors
+        to populate `interactables`.
+        """
+        if not isinstance(image, np.ndarray):
+            raise TypeError("image must be a NumPy array")
+        # Convert to PIL for img2pdf
+        if image.ndim == 2:
+            pil = Image.fromarray(image, mode="L")
+        elif image.ndim == 3 and image.shape[2] in (3, 4):
+            arr = image
+            if arr.shape[2] == 4:
+                arr = arr[:, :, :3]
+            pil = Image.fromarray(arr, mode="RGB")
+        else:
+            raise ValueError("Unsupported image shape for PDF conversion")
+
+        bio = io.BytesIO()
+        pil.save(bio, format="PNG")
+        bio.seek(0)
+        pdf_bytes = img2pdf.convert([bio.getvalue()])
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        page_obj = reader.pages[0]
+
+        # Run detectors on the provided image
+        detected: list[Interactable] = []
+        for interactable_type in INTERACTABLE_TYPES:
+            try:
+                ia = interactable_type.detect(image)
+                detected.append(ia)
+            except Exception:
+                # Skip detectors that fail; they are reported elsewhere when needed
+                continue
+        return cls(page=page_obj, interactables=detected)
 
     @classmethod
-    def from_pdf(cls, page: PageObject) -> Page:
-        """Construct a Page object from a pypdf PageObject."""
-        return cls(page=page, interactables=[])
+    def from_pdf(cls, page: PageObject, dpi: int = 150) -> Page:
+        """Construct a Page object from a pypdf PageObject and detect interactables."""
+        # Serialize single page to bytes, render via pypdfium2, then run detectors
+        writer = PdfWriter()
+        writer.add_page(page)
+        buf = io.BytesIO()
+        writer.write(buf)
+        buf.seek(0)
+        doc = pdfium.PdfDocument(buf.getvalue())
+        p = doc.get_page(0)
+        scale = dpi / 72.0
+        bitmap = p.render(scale=scale, rotation=0)
+        pil_image = bitmap.to_pil()
+        arr = np.array(pil_image)
+        if arr.ndim == 3 and arr.shape[2] == 4:
+            arr = arr[:, :, :3]
+        p.close(); doc.close()
+
+        detected: list[Interactable] = []
+        for interactable_type in INTERACTABLE_TYPES:
+            try:
+                ia = interactable_type.detect(arr)
+                detected.append(ia)
+            except Exception:
+                continue
+        return cls(page=page, interactables=detected)
 
 
 class Document(Page):
