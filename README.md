@@ -1,4 +1,4 @@
-# SimplyPDF — lightweight Python PDF editor
+# SimplyPDF — Lightweight Python PDF editor
 
 This is a minimal Flask-based PDF editor that lets you upload a PDF, place text boxes, checkboxes, images, and drawn signatures on pages, drag/resize annotations, and save annotations into the PDF.
 
