@@ -10,7 +10,6 @@ from pypdf import PdfReader
 import numpy as np
 
 from page import Page, Document
-from interactables import INTERACTABLE_TYPES
 
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
@@ -85,7 +84,8 @@ def page_image():
 		if index < 0 or index >= len(reader.pages):
 			return jsonify({"error": "Page index out of range"}), 400
 		page_obj = reader.pages[index]
-		page = Page.from_pdf(page_obj)
+		# Create Page without detection - just for rendering
+		page = Page(page_obj)
 		img = page.flatten(dpi=dpi)  # np.ndarray RGB
 		# Encode to PNG in-memory
 		from PIL import Image
@@ -114,45 +114,47 @@ def detect_interactables():
 		if index < 0 or index >= len(reader.pages):
 			return jsonify({"error": "Page index out of range"}), 400
 		page_obj = reader.pages[index]
-		page = Page.from_pdf(page_obj)
-		# Rasterize page; if this fails, return a structured error with 200
+
+		# Use Page.from_pdf to get properly initialized page with Z-ordering
 		try:
-			img = page.flatten(dpi=dpi)
+			page = Page.from_pdf(page_obj, dpi=dpi)
 		except Exception as re:
-			app.logger.exception("Detect rasterization failed: %s", re)
+			app.logger.exception("Page.from_pdf failed: %s", re)
 			return jsonify({
 				"pdf": pdf_name,
 				"page": index,
 				"interactables": [],
-				"error": f"Rasterization failed: {re}"
+				"error": f"Page processing failed: {re}"
 			})
 
+		# Convert all interactables to dict format
 		detected: List[Dict[str, Any]] = []
-		for cls in INTERACTABLE_TYPES:
+		for ia in page.interactables:
 			try:
-				if hasattr(cls, 'detect_all'):
-					items = cls.detect_all(img) or []
-					for ia in items:
-						try:
-							ia.page = index
-							detected.append(ia.to_dict())
-						except Exception:
-							# Ensure one bad item doesn't break others
-							pass
-				else:
-					ia = cls.detect(img)
-					if ia is not None:
-						ia.page = index
-						detected.append(ia.to_dict())
+				ia.page = index
+				detected.append(ia.to_dict())
 			except Exception as e:
-				app.logger.warning("Detector %s failed: %s", getattr(cls, "__name__", "unknown"), e)
-				detected.append({
-					"id": None,
-					"kind": getattr(cls, "__name__", "unknown"),
-					"page": index,
-					"bbox": None,
-					"meta": {"error": str(e)}
-				})
+				app.logger.warning("Failed to serialize interactable: %s", e)
+				continue
+
+		# Log detection summary to terminal
+		if detected:
+			counts = {}
+			for ia in detected:
+				kind = ia.get('kind', 'generic')
+				counts[kind] = counts.get(kind, 0) + 1
+
+			app.logger.info(f"Detected {len(detected)} interactables on page {index}: {counts}")
+
+			# Print first few bboxes of each type for debugging
+			printed_per_type = {}
+			for ia in detected:
+				kind = ia.get('kind', 'generic')
+				if printed_per_type.get(kind, 0) < 3:  # Print first 3 of each type
+					bbox = ia.get('bbox', [])
+					z = ia.get('z', 0)
+					app.logger.info(f"  {kind} (z={z}): bbox={bbox}")
+					printed_per_type[kind] = printed_per_type.get(kind, 0) + 1
 
 		return jsonify({
 			"pdf": pdf_name,
@@ -203,7 +205,7 @@ def raycast():
 	x = request.args.get("x", type=int)
 	y = request.args.get("y", type=int)
 	dpi = request.args.get("dpi", default=150, type=int)
-	passthru = request.args.get("passthru", default="false")
+	passthru = request.args.get("passthru", default="true")
 	passthru = str(passthru).lower() in ("1", "true", "yes")
 	z = request.args.get("z", type=int)
 	if not pdf_name or index is None or x is None or y is None:

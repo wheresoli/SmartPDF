@@ -99,20 +99,19 @@ class Page:
         doc.close()
         return arr
     
-    @classmethod
-    def unflatten(cls, image: np.ndarray, dpi: int = 150) -> Page:
+    def unflatten(self, dpi: int = 150) -> None:
         """Construct a Page object from a rasterized image array and detect interactables.
 
         Creates a single-page PDF from the image for consistency, and runs detectors
         to populate `interactables`.
         """
-        if not isinstance(image, np.ndarray):
+        if not isinstance(self.page, np.ndarray):
             raise TypeError("image must be a NumPy array")
         # Convert to PIL for img2pdf
-        if image.ndim == 2:
-            pil = Image.fromarray(image, mode="L")
-        elif image.ndim == 3 and image.shape[2] in (3, 4):
-            arr = image
+        if self.page.ndim == 2:
+            pil = Image.fromarray(self.page, mode="L")
+        elif self.page.ndim == 3 and self.page.shape[2] in (3, 4):
+            arr = self.page
             if arr.shape[2] == 4:
                 arr = arr[:, :, :3]
             pil = Image.fromarray(arr, mode="RGB")
@@ -120,8 +119,8 @@ class Page:
             raise ValueError("Unsupported image shape for PDF conversion")
 
         # Detect interactables directly on the provided image array
-        arr = image if image.ndim != 3 or image.shape[2] != 4 else image[:, :, :3]
-        interactables: List[Interactable] = cls.detect_interactables(arr)
+        arr = self.page if self.page.ndim != 3 or self.page.shape[2] != 4 else self.page[:, :, :3]
+        self.interactables: List[Interactable] = self.detect_interactables(arr)
 
         bio = io.BytesIO()
         pil.save(bio, format="PNG")
@@ -131,7 +130,23 @@ class Page:
         reader = PdfReader(io.BytesIO(pdf_bytes))
         page_obj = reader.pages[0]
 
-        return cls(page=page_obj, interactables=interactables)
+        self.page = page_obj
+
+    def to_json(self, dpi: int = 150) -> dict:
+        """Serialize this Page to a JSON-compatible dictionary.
+
+        Includes the rasterized image and detected interactables.
+        """
+        if not self.is_flattened:
+            img = self.flatten(dpi=dpi)
+        else:
+            img = self.page
+
+        return {
+            "image": img.tolist(),
+            "interactables": [ia.to_json() for ia in self.interactables]
+        }
+
 
     @classmethod
     def from_pdf(cls, page: PageObject, dpi: int = 150) -> Page:
@@ -152,34 +167,135 @@ class Page:
             arr = arr[:, :, :3]
         p.close(); doc.close()
 
+        # NEW APPROACH: Detect all primitives first, then classify based on context
         detected: List[Interactable] = []
-        for interactable_type in INTERACTABLE_TYPES:
-            try:
-                if hasattr(interactable_type, 'detect_all'):
-                    items = interactable_type.detect_all(arr)
-                    for ia in items or []:
-                        if ia is not None:
-                            detected.append(ia)
-                else:
-                    ia = interactable_type.detect(arr)
-                    if ia is not None:
-                        detected.append(ia)
-            except Exception:
-                continue
+
+        try:
+            from primitives import detect_all_rectangles, detect_all_circles, detect_all_text_regions, classify_primitives
+            import uuid
+
+            # Step 1: Detect ALL geometric primitives without classification
+            all_rects = detect_all_rectangles(arr)
+            all_circles = detect_all_circles(arr)
+            all_text = detect_all_text_regions(arr)
+
+            # Step 2: Classify primitives based on features and spatial context
+            classified = classify_primitives(all_rects, all_circles, all_text)
+
+            # Step 3: Convert primitives to Interactable objects
+            # TEMPORARY: Only detect text for now
+
+            # Text blocks
+            for prim in classified['text_blocks']:
+                detected.append(Text(
+                    id=str(uuid.uuid4()),
+                    bbox=prim.bbox,
+                    meta={},
+                    z=1
+                ))
+
+            # TODO: Re-enable after text detection is working well
+            # # Checkboxes
+            # for prim in classified['checkboxes']:
+            #     x, y, w, h = prim.bbox
+            #     # Detect checked state
+            #     pad = max(1, int(min(w, h) * 0.25))
+            #     if pad < h // 2 and pad < w // 2:
+            #         inner = arr[y+pad:y+h-pad, x+pad:x+w-pad]
+            #         if inner.size > 0:
+            #             gray_inner = inner if inner.ndim == 2 else inner.mean(axis=2).astype(np.uint8)
+            #             checked = float(gray_inner.mean()) < 200
+            #         else:
+            #             checked = False
+            #     else:
+            #         checked = False
+
+            #     detected.append(Checkbox(
+            #         id=str(uuid.uuid4()),
+            #         bbox=prim.bbox,
+            #         meta={"checked": checked},
+            #         z=2
+            #     ))
+
+            # # Bubbles
+            # for prim in classified['bubbles']:
+            #     x, y, w, h = prim.bbox
+            #     cx, cy = x + w // 2, y + h // 2
+            #     r = (w + h) / 4.0
+            #     inner_r = max(1, int(r * 0.5))
+
+            #     # Check if filled
+            #     if 0 <= cy-inner_r and cy+inner_r < arr.shape[0] and 0 <= cx-inner_r and cx+inner_r < arr.shape[1]:
+            #         inner_region = arr[cy-inner_r:cy+inner_r, cx-inner_r:cx+inner_r]
+            #         if inner_region.size > 0:
+            #             gray_inner = inner_region if inner_region.ndim == 2 else inner_region.mean(axis=2).astype(np.uint8)
+            #             filled = float(gray_inner.mean()) < 200
+            #         else:
+            #             filled = False
+            #     else:
+            #         filled = False
+
+            #     detected.append(Bubble(
+            #         id=str(uuid.uuid4()),
+            #         bbox=prim.bbox,
+            #         meta={"selected": filled},
+            #         z=2
+            #     ))
+
+            # # Shapes (decorative rectangles, borders, etc.)
+            # for prim in classified['shapes']:
+            #     # Determine shape type from vertices
+            #     verts = prim.features.get('vertices', 4)
+            #     if verts == 2:
+            #         shape_type = 'line'
+            #     elif 3 <= verts <= 4:
+            #         shape_type = 'rectangle'
+            #     else:
+            #         shape_type = 'polygon'
+
+            #     detected.append(Shape(
+            #         id=str(uuid.uuid4()),
+            #         bbox=prim.bbox,
+            #         meta={"shape_type": shape_type},
+            #         z=0
+            #     ))
+
+            # # Text fields (input boxes)
+            # try:
+            #     from interactables import TextField
+            #     for prim in classified['text_fields']:
+            #         detected.append(TextField(
+            #             id=str(uuid.uuid4()),
+            #             bbox=prim.bbox,
+            #             meta={},
+            #             z=2
+            #         ))
+            # except Exception:
+            #     pass
+
+        except Exception as e:
+            # Fallback to old detection if primitive detection fails
+            import traceback
+            print(f"Primitive detection failed: {e}")
+            traceback.print_exc()
+            detected = []
+
         return cls(page=page, interactables=detected)
 
     # Page does not have a bbox; cropping should be done on Interactable instances.
+
+    def to_document(self, copy: bool = True) -> "Document":
+        """Convert this Page into a single-page Document."""
+        page = copy.deepcopy(self) if copy else self
+        return Document(PdfWriter().add_page(page))
 
 class Document(Page):
     """Wrapper over pypdf reader/writer with Page wrappers."""
     def __init__(self, pdf: PdfReader | PdfWriter):
         self._pdf: PdfReader | PdfWriter = pdf
-        self.is_flattened: bool = False
         self.pages: list[Page] = []
         self.index: int = 0
-
-    @property
-
+        # Don't call super().__init__ since Document doesn't have a single page
 
     @property
     def page(self) -> Page:
@@ -191,10 +307,19 @@ class Document(Page):
             self.wrap_pages()
         return self.page.raycast(target, passthru=passthru, z=z)
 
-    def wrap_pages(self):
+    def wrap_pages(self, detect: bool = True):
+        """Wrap PDF pages as Page objects.
+
+        Args:
+            detect: If True, runs detection on each page. If False, wraps without detection.
+        """
         # For PdfReader: `.pages` is a list of PageObject
         try:
-            self.pages = [Page.from_pdf(p) for p in self._pdf.pages]
+            if detect:
+                self.pages = [Page.from_pdf(p) for p in self._pdf.pages]
+            else:
+                # Wrap without detection (for heuristic extraction)
+                self.pages = [Page(page=p, interactables=[]) for p in self._pdf.pages]
         except AttributeError:
             self.pages = []
 
@@ -257,4 +382,6 @@ class Document(Page):
         doc = cls(reader)
         doc.wrap_pages()
         return doc
-    
+
+    def to_document(self, copy: bool = True) -> "Document":
+        return copy.deepcopy(self) if copy else self

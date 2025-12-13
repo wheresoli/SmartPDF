@@ -25,6 +25,7 @@ Thumbs.db
 uploads/*
 !uploads/.gitkeep
 static/lib/
+media/
 
 # Node (if any future scripts)
 node_modules/

@@ -32,12 +32,20 @@
         <button id="btnDetectionsToggle">Show/Hide Detections</button>
         <button id="btnDetectionsRescan">Rescan Detections</button>
         <label style="margin-left:8px">Scale
-            <input id="detectScale" type="number" min="3" max="8" step="1" value="5" style="width:50px" />
+            <input id="scale" type="number" min="3" max="8" step="1" value="5" style="width:50px" />
         </label>
     </div>
 
     <div id="viewerWrap">
         <div id="canvasContainer"></div>
+        <div id="legend" style="position: fixed; top: 80px; right: 20px; background: rgba(255,255,255,0.95); border: 2px solid #333; padding: 12px; border-radius: 8px; font-family: sans-serif; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); display: none;">
+            <div style="font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Detection Legend</div>
+            <div style="margin: 4px 0;"><span style="display: inline-block; width: 16px; height: 16px; background: rgba(31, 119, 180, 0.3); border: 2px dashed #1f77b4; vertical-align: middle;"></span> <strong style="color: #1f77b4;">Text</strong> - Text regions</div>
+            <div style="margin: 4px 0;"><span style="display: inline-block; width: 16px; height: 16px; background: rgba(255, 127, 14, 0.3); border: 2px dashed #ff7f0e; vertical-align: middle;"></span> <strong style="color: #ff7f0e;">Shape</strong> - Borders, boxes</div>
+            <div style="margin: 4px 0;"><span style="display: inline-block; width: 16px; height: 16px; background: rgba(44, 160, 44, 0.3); border: 2px dashed #2ca02c; vertical-align: middle;"></span> <strong style="color: #2ca02c;">Checkbox</strong> - Form checkboxes</div>
+            <div style="margin: 4px 0;"><span style="display: inline-block; width: 16px; height: 16px; background: rgba(214, 39, 40, 0.3); border: 2px dashed #d62728; vertical-align: middle;"></span> <strong style="color: #d62728;">Bubble</strong> - Radio buttons</div>
+            <div style="margin: 4px 0;"><span style="display: inline-block; width: 16px; height: 16px; background: rgba(140, 86, 75, 0.3); border: 2px dashed #8c564b; vertical-align: middle;"></span> <strong style="color: #8c564b;">Text Field</strong> - Input boxes</div>
+        </div>
     </div>
 
     <div id="signatureModal" class="modal">
