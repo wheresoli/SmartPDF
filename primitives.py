@@ -466,14 +466,16 @@ def classify_primitives(rects: List[Primitive], circles: List[Primitive], text: 
             if w * h >= 100:
                 shapes.append(circ)
 
-    # SKIP MERGING - morphological detection already creates word-level regions
-    # Just deduplicate overlapping/nested regions to match heuristic
+    # Deduplicate overlapping/nested regions first
     deduplicated_text = deduplicate_text_regions(text)
 
+    # Then merge nearby boxes on the same line to reduce false positives
+    merged_text = merge_text_regions(deduplicated_text)
+
     # TEMPORARY: Don't clip text to shapes since we're not detecting shapes right now
-    # clipped_text = clip_text_to_shapes(deduplicated_text, shapes)
+    # clipped_text = clip_text_to_shapes(merged_text, shapes)
     # text_blocks = clipped_text
-    text_blocks = deduplicated_text
+    text_blocks = merged_text
 
     return {
         'checkboxes': checkboxes,
