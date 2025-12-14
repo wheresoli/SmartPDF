@@ -1,7 +1,7 @@
 # SmartPDF — Intelligent PDF Editor
 OCR-based PDF editor intended for working professionals, with features including:
 - In-Place Text Editing
-- Flattening ⇔ Unflattening (Including Old Documents)
+- Flattening ⇔ Unflattening Old Documents
 - Interactables (Text, Checkboxes, Bubbles, Images, Signatures, Censors)
 - Page Operations (Add, Rotate, Remove)
 - Night Filter
