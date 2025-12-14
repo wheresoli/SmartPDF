@@ -1,9 +1,12 @@
-# SimplyPDF — Lightweight Python PDF editor
-
-This is a minimal Flask-based PDF editor that lets you upload a PDF, place text boxes, checkboxes, images, and drawn signatures on pages, drag/resize annotations, and save annotations into the PDF.
+# SmartPDF — Intelligent PDF Editor
+OCR-based PDF editor intended for working professionals, with features including:
+- In-Place Text Editing
+- Flattening ⇔ Unflattening (Including Old Documents)
+- Interactables (Text, Checkboxes, Bubbles, Images, Signatures, Censors)
+- Page Operations (Add, Rotate, Remove)
+- Night Filter
 
 Quickstart (Windows PowerShell)
-
 1. Create and activate virtualenv (recommended):
 ```powershell
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
