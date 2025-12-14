@@ -191,7 +191,8 @@ class Page:
                     id=str(uuid.uuid4()),
                     bbox=prim.bbox,
                     meta={},
-                    z=1
+                    z=1,
+                    primitive=prim
                 ))
 
             # TODO: Re-enable after text detection is working well

@@ -7,6 +7,7 @@
         interactables: [],
         dpi: 150,
         overlaysVisible: false,
+        nightFilterEnabled: true,
     };
 
     const el = {
@@ -17,7 +18,8 @@
         pageCount: document.getElementById('pageCount'),
         detectToggle: document.getElementById('btnDetectionsToggle'),
         detectRescan: document.getElementById('btnDetectionsRescan'),
-        scaleInput: document.getElementById('scale') || document.getElementById('scaleInput') || document.getElementById('scaleSlider'),
+        nightFilter: document.getElementById('btnNightFilter'),
+        dpiSelect: document.getElementById('dpiSelect'),
         canvasContainer: document.getElementById('canvasContainer'),
         legend: document.getElementById('legend'),
         canvas: null,
@@ -70,6 +72,7 @@
         el.canvas.height = img.naturalHeight;
         clearCanvas();
         el.ctx.drawImage(img, 0, 0);
+
         console.log('[LOAD_IMAGE] Image drawn to canvas');
         // If overlays are toggled on, redraw them on top
         if (state.overlaysVisible && state.interactables && state.interactables.length) {
@@ -262,30 +265,18 @@
                 if (el.legend) el.legend.style.display = 'none';
             }
         });
-        // Scale/DPI binding: supports numeric input or range slider if present
-        if (el.scaleInput) {
-            const handleScale = async () => {
-                let val = el.scaleInput.value;
-                if (val == null) return;
-                // Accept percent (50-300), float scale (0.5-3.0), or dpi directly (72-600)
-                let num = parseFloat(val);
-                if (Number.isNaN(num)) return;
-                // Heuristic: if <= 10, treat as scale; if <= 1000 and >= 20, treat as percent; else dpi
-                if (num <= 10) {
-                    state.dpi = Math.max(72, Math.min(600, Math.round(72 * num)));
-                } else if (num >= 20 && num <= 1000) {
-                    state.dpi = Math.max(72, Math.min(600, Math.round(1.5 * num))); // ~150 dpi at 100%
+
+        // Night filter toggle
+        if (el.nightFilter) {
+            el.nightFilter.addEventListener('click', () => {
+                state.nightFilterEnabled = !state.nightFilterEnabled;
+                // Toggle CSS class on body to invert entire page
+                if (state.nightFilterEnabled) {
+                    document.body.classList.add('night-filter');
                 } else {
-                    state.dpi = Math.max(72, Math.min(600, Math.round(num)));
+                    document.body.classList.remove('night-filter');
                 }
-                await loadImageForPage();
-                // Redraw overlays if visible; bboxes are in pixel space, so they scale with image
-                if (state.overlaysVisible && state.interactables && state.interactables.length) {
-                    drawInteractables();
-                }
-            };
-            el.scaleInput.addEventListener('input', handleScale);
-            el.scaleInput.addEventListener('change', handleScale);
+            });
         }
         el.pageNum.addEventListener('change', async () => {
             const idx = parseInt(el.pageNum.value || '1', 10) - 1;
@@ -297,6 +288,20 @@
             state.interactables = [];
             state.overlaysVisible = false;
         });
+
+        // DPI change handler
+        if (el.dpiSelect) {
+            el.dpiSelect.addEventListener('change', async () => {
+                const newDpi = parseInt(el.dpiSelect.value, 10);
+                if (Number.isNaN(newDpi) || newDpi < 72 || newDpi > 600) return;
+                state.dpi = newDpi;
+                await loadImageForPage();
+                // Re-run detection at new DPI if overlays are visible
+                if (state.overlaysVisible) {
+                    await detectForPage();
+                }
+            });
+        }
 
         // Canvas click raycast: log the interactable UUID if hit
         el.canvasContainer.addEventListener('click', async (ev) => {
@@ -341,6 +346,15 @@
     }
 
     function init() {
+        console.log('[INIT] Starting initialization, nightFilterEnabled =', state.nightFilterEnabled);
+
+        // Apply night filter FIRST if enabled
+        if (state.nightFilterEnabled) {
+            console.log('[INIT] Adding night-filter class to body');
+            document.body.classList.add('night-filter');
+            console.log('[INIT] Body classes:', document.body.className);
+        }
+
         ensureCanvas();
         renderPageInfo();
         bindEvents();

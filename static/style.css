@@ -1,6 +1,6 @@
 body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
 #toolbar { background:#f3f3f3; padding:8px; display:flex; gap:8px; align-items:center; }
-.#viewerWrap { position:relative; height: calc(100vh - 48px); overflow:auto; background:#666; }
+#viewerWrap { position:relative; height: calc(100vh - 48px); overflow:auto; background:#666; }
 #canvasContainer { position:relative; display:flex; justify-content:center; padding:16px; }
 #canvasContainer canvas { display:block; }
 #overlay { position:absolute; left:0; top:0; pointer-events:none; }
@@ -10,3 +10,29 @@ body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
 .widgetBox { position:absolute; border:2px solid rgba(0,150,255,0.8); background:rgba(0,150,255,0.1); pointer-events:none; }
 .modal-content { background:#fff; padding:12px; border-radius:6px; }
 .detectionBox { position:absolute; border:2px dashed rgba(0,200,0,0.8); background:rgba(0,200,0,0.08); pointer-events:none; }
+
+/* Night filter mode - dark theme */
+body.night-filter {
+    background-color: #000 !important;
+}
+body.night-filter #toolbar {
+    background: #222 !important;
+    color: #fff !important;
+}
+body.night-filter #viewerWrap {
+    background: #000 !important;
+}
+body.night-filter #canvasContainer {
+    background: #000 !important;
+}
+body.night-filter button,
+body.night-filter input,
+body.night-filter select {
+    background: #333 !important;
+    color: #fff !important;
+    border: 1px solid #555 !important;
+}
+/* Invert the canvas to show white PDF as black background with black text as white */
+body.night-filter canvas {
+    filter: invert(1) !important;
+}

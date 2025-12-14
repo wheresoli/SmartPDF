@@ -30,6 +30,7 @@ class Interactable:
     bbox: Tuple[int, int, int, int]  # x, y, w, h in pixel coords
     meta: Dict[str, Any]
     z: int = 0 # Height order for overlapping interactables
+    primitive: Any = None  # Optional reference to source Primitive (for OCR text, features, etc.)
 
     # Use dataclass-generated __init__; bbox should be passed directly
 
@@ -59,6 +60,8 @@ class Interactable:
         # Ensure bbox and meta are JSON-safe
         d["bbox"] = _json_safe(d.get("bbox"))
         d["meta"] = _json_safe(d.get("meta"))
+        # Remove primitive field (contains non-serializable numpy arrays)
+        d.pop("primitive", None)
         return d
 
     def on_click(self) -> Dict[str, Any]:
