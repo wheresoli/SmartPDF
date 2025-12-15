@@ -20,6 +20,11 @@
         detectRescan: document.getElementById('btnDetectionsRescan'),
         nightFilter: document.getElementById('btnNightFilter'),
         dpiSelect: document.getElementById('dpiSelect'),
+        ocrEnabled: document.getElementById('ocrEnabled'),
+        hKernel: document.getElementById('hKernel'),
+        mergeGap: document.getElementById('mergeGap'),
+        minWidth: document.getElementById('minWidth'),
+        minArea: document.getElementById('minArea'),
         canvasContainer: document.getElementById('canvasContainer'),
         legend: document.getElementById('legend'),
         canvas: null,
@@ -187,7 +192,21 @@
 
     async function detectForPage() {
         if (!state.pdf) return;
-        const url = `/detect?pdf=${encodeURIComponent(state.pdf)}&index=${state.pageIndex}&dpi=${state.dpi}`;
+
+        // Build URL with detection parameters
+        const params = new URLSearchParams({
+            pdf: state.pdf,
+            index: state.pageIndex,
+            dpi: state.dpi,
+            ocr: el.ocrEnabled?.checked ? '1' : '0',
+            h_kernel: el.hKernel?.value || '6',
+            merge_gap: el.mergeGap?.value || '20',
+            min_width: el.minWidth?.value || '10',
+            min_area: el.minArea?.value || '50'
+        });
+
+        const url = `/detect?${params.toString()}`;
+        console.log('[DETECT] Requesting with params:', params.toString());
         const resp = await fetch(url);
         if (!resp.ok) throw new Error('Detect failed');
         const data = await resp.json();

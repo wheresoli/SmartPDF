@@ -103,11 +103,21 @@ def detect_interactables():
 	pdf_name = request.args.get("pdf")
 	index = request.args.get("index", type=int)
 	dpi = request.args.get("dpi", default=150, type=int)
+
+	# Get detection parameters from query string
+	ocr_enabled = request.args.get("ocr", default="1") in ("1", "true", "yes")
+	h_kernel = request.args.get("h_kernel", default=10, type=int)
+	merge_gap = request.args.get("merge_gap", default=25, type=int)
+	min_width = request.args.get("min_width", default=1, type=int)
+	min_area = request.args.get("min_area", default=50, type=int)
+
 	if not pdf_name or index is None:
 		return jsonify({"error": "Missing pdf or index"}), 400
 	path = os.path.join(app.config["UPLOAD_FOLDER"], pdf_name)
 	if not os.path.exists(path):
 		return jsonify({"error": "PDF not found"}), 404
+
+	app.logger.info(f"Detection params: ocr={ocr_enabled}, h_kernel={h_kernel}, merge_gap={merge_gap}, min_width={min_width}, min_area={min_area}")
 
 	try:
 		reader = PdfReader(path)
@@ -117,7 +127,12 @@ def detect_interactables():
 
 		# Use Page.from_pdf to get properly initialized page with Z-ordering
 		try:
-			page = Page.from_pdf(page_obj, dpi=dpi)
+			page = Page.from_pdf(page_obj, dpi=dpi,
+								ocr_enabled=ocr_enabled,
+								h_kernel=h_kernel,
+								merge_gap=merge_gap,
+								min_width=min_width,
+								min_area=min_area)
 		except Exception as re:
 			app.logger.exception("Page.from_pdf failed: %s", re)
 			return jsonify({

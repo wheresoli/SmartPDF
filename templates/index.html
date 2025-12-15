@@ -22,16 +22,31 @@
         <input id="pageNum" type="number" min="1" value="1" style="width:60px" />
         <span id="pageCount">/ 0</span>
         <button id="btnNext">▶</button>
+        <button id="btnNightFilter">Night Filter</button>
+        <span style="margin-left:12px; border-left: 2px solid #ccc; height: 20px; display: inline-block; vertical-align: middle;"></span>
         <button id="btnText">Text</button>
-
-
         <button id="btnImage">Image</button>
         <button id="btnSignature">Signature</button>
         <button id="btnSave">Save to PDF</button>
-        <span style="margin-left:12px"></span>
+        <span style="margin-left:12px; border-left: 2px solid #ccc; height: 20px; display: inline-block; vertical-align: middle;"></span>
         <button id="btnDetectionsToggle">Show/Hide Detections</button>
         <button id="btnDetectionsRescan">Rescan Detections</button>
-        <button id="btnNightFilter">Night Filter</button>
+        <span style="margin-left:12px; border-left: 2px solid #ccc; height: 20px; display: inline-block; vertical-align: middle;"></span>
+        <label style="margin-left:8px">
+            <input type="checkbox" id="ocrEnabled" checked> OCR
+        </label>
+        <label style="margin-left:8px">H-Kernel
+            <input type="number" id="hKernel" min="1" max="20" value="6" style="width:50px">
+        </label>
+        <label style="margin-left:8px">Merge Gap
+            <input type="number" id="mergeGap" min="0" max="100" value="20" style="width:50px">
+        </label>
+        <label style="margin-left:8px">Min Width
+            <input type="number" id="minWidth" min="1" max="100" value="10" style="width:50px">
+        </label>
+        <label style="margin-left:8px">Min Area
+            <input type="number" id="minArea" min="1" max="500" value="50" style="width:50px">
+        </label>
         <label style="margin-left:8px">DPI
             <select id="dpiSelect">
                 <option value="72">72</option>

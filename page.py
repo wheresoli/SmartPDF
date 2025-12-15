@@ -149,7 +149,9 @@ class Page:
 
 
     @classmethod
-    def from_pdf(cls, page: PageObject, dpi: int = 150) -> Page:
+    def from_pdf(cls, page: PageObject, dpi: int = 150, ocr_enabled: bool = True,
+                 h_kernel: int = 10, merge_gap: int = 25, min_width: int = 1,
+                 min_area: int = 50) -> Page:
         """Construct a Page object from a pypdf PageObject and detect interactables."""
         # Serialize single page to bytes, render via pypdfium2, then run detectors
         writer = PdfWriter()
@@ -177,7 +179,9 @@ class Page:
             # Step 1: Detect ALL geometric primitives without classification
             all_rects = detect_all_rectangles(arr)
             all_circles = detect_all_circles(arr)
-            all_text = detect_all_text_regions(arr)
+            all_text = detect_all_text_regions(arr, ocr_enabled=ocr_enabled,
+                                              h_kernel=h_kernel, merge_gap=merge_gap,
+                                              min_width=min_width, min_area=min_area)
 
             # Step 2: Classify primitives based on features and spatial context
             classified = classify_primitives(all_rects, all_circles, all_text)
